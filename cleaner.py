@@ -59,7 +59,7 @@ class GroupTarget:
         self.entity = entity
         self.id = entity.id
         self.name = dialog.name or f"Group_{entity.id}"
-        self.username = f"@{entity.username}" if getattr(entity, 'username', None) else "Yopiq guruh"
+        self.username = f"@{entity.username}" if getattr(entity, 'username', None) else "Yopiq / Havolasiz"
         self.members_count = members_count
         self.reason = reason
 
@@ -72,16 +72,13 @@ class ChatCleaner:
         self.whitelist = whitelist or get_whitelist()
         self.delay = get_delete_delay()
         self.revoke = get_revoke_for_all()
-        self.block_flood_until = 0.0  # Telegram BlockRequest cheklov vaqti
+        self.block_flood_until = 0.0
 
     async def scan_dialogs(
         self,
         mode: CleanupMode = CleanupMode.EMPTY_AND_JOINED,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> List[ChatTarget]:
-        """
-        Tezkor skanerlash: dialog.message orqali yozishmasi bor (3+ xabar) chatlarni darhol SKIP qiladi.
-        """
         targets: List[ChatTarget] = []
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
@@ -194,13 +191,9 @@ class ChatCleaner:
         months_threshold: float = 9.0,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> List[BotTarget]:
-        """
-        Tezkor botlarni skanerlash: dialog.date xotirada borligi uchun bir necha soniyada tugaydi.
-        """
         targets: List[BotTarget] = []
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
-        
         now = datetime.now(timezone.utc)
 
         for index, dialog in enumerate(dialogs):
@@ -254,17 +247,23 @@ class ChatCleaner:
         progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> List[GroupTarget]:
         """
-        Siz umuman xabar yozmagan, majburiy qo'shilgan guruhlarni (200+ a'zoli) aniqlaydi.
-        Siz admin yoki creator bo'lgan guruhlar tegilmaydi.
+        Shubhali guruhlarni aniqlash:
+        1. Oddiy kichik shaxsiy guruhlar (Chat) avtomatik saqlanadi (SKIP qilinadi).
+        2. Faqat Supergroup / Megagroup bo'lgan va a'zolari min_members dan ortiq bo'lgan guruhlar tekshiriladi.
+        3. O'zingiz xabar yozgan yoki forward qilgan guruhlar SAQLANADI (o'chirilmaydi).
         """
         targets: List[GroupTarget] = []
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
 
+        me = await self.client.get_me()
+        my_id = me.id
+
         for index, dialog in enumerate(dialogs):
             if progress_callback and (index % 5 == 0 or index == total_dialogs - 1):
                 progress_callback(index + 1, total_dialogs, dialog.name or "Noma'lum")
 
+            # Faqat guruhlarni tekshirish
             if not dialog.is_group:
                 continue
 
@@ -272,13 +271,18 @@ class ChatCleaner:
             if not entity:
                 continue
 
-            # O'zingiz yaratgan (Creator) yoki Admin bo'lgan guruhlarni o'tkazib yuborish
+            # 1. Oddiy kichik shaxsiy guruhlar (types.Chat - sinfdoshlar, oila, do'stlar)ni SAQLAB QOLISH
+            # Spam guruhlar har doim supergroup (types.Channel) bo'ladi.
+            if isinstance(entity, types.Chat):
+                continue
+
+            # 2. O'zingiz yaratgan (Creator) yoki Admin bo'lgan guruhlarni SAQLASH
             if getattr(entity, 'creator', False):
                 continue
             if getattr(entity, 'admin_rights', None) is not None:
                 continue
 
-            # Oq ro'yxat tekshiruvi
+            # 3. Oq ro'yxat tekshiruvi
             if entity.id in self.whitelist:
                 continue
             if getattr(entity, 'username', None) and entity.username.lower() in self.whitelist:
@@ -286,26 +290,55 @@ class ChatCleaner:
             if getattr(entity, 'username', None) and f"@{entity.username.lower()}" in self.whitelist:
                 continue
 
-            # A'zolar sonini aniqlash
-            members_count = getattr(entity, 'participants_count', 0) or 0
-            if members_count < min_members and members_count != 0:
+            # 4. A'zolar sonini aniq olish (FullChannel orqali)
+            members_count = getattr(entity, 'participants_count', None)
+            if members_count is None:
+                try:
+                    full = await self.client(functions.channels.GetFullChannelRequest(channel=dialog.input_entity))
+                    members_count = full.full_chat.participants_count or 0
+                except Exception:
+                    members_count = 0
+
+            # Agar a'zolar soni belgilangan sondan (masalan: 200 ta) kam bo'lsa -> SAQLASH
+            if members_count < min_members:
                 continue
 
-            # O'zingiz bu guruhda xabar yozganmisiz tekshirish
+            # 5. O'zingiz bu guruhda biron marta xabar yozganmisiz / forward qilganmisiz tekshirish
+            user_participated = False
             try:
-                my_msgs = await self.client.get_messages(dialog.input_entity, from_user='me', limit=1)
-                if len(my_msgs) > 0:
-                    # Siz xabar yozgansiz, demak kerakli guruh
-                    continue
+                # 5.1 Oxirgi 40 ta xabarni tekshirish (agar yaqinda yozgan/forward qilgan bo'lsangiz)
+                recent_msgs = await self.client.get_messages(dialog.input_entity, limit=40)
+                for m in recent_msgs:
+                    if getattr(m, 'out', False) or getattr(m, 'sender_id', None) == my_id or getattr(m, 'from_id', None) == my_id:
+                        user_participated = True
+                        break
+
+                # 5.2 Agar oxirgi xabarlarda chiqmasa, qidiruv orqali tekshirish
+                if not user_participated:
+                    my_msgs = await self.client.get_messages(dialog.input_entity, from_user='me', limit=1)
+                    if len(my_msgs) > 0:
+                        user_participated = True
+
+                if not user_participated:
+                    my_id_msgs = await self.client.get_messages(dialog.input_entity, from_user=my_id, limit=1)
+                    if len(my_id_msgs) > 0:
+                        user_participated = True
+
             except Exception as e:
-                logger.warning(f"Guruh xabarlarini tekshirishda xatolik ({dialog.name}): {e}")
+                logger.warning(f"Guruh xabarlarini tekshirishda ogohlantirish ({dialog.name}): {e}")
+                # Xatolik bo'lsa xavfsizlik uchun bu guruhga teginmaslik
                 continue
 
+            # Agar siz bu guruhda yozgan bo'lsangiz -> SAQLASH
+            if user_participated:
+                continue
+
+            # Faqat hech qachon yozilmagan katta guruhlargina qo'shiladi
             targets.append(GroupTarget(
                 dialog=dialog,
                 entity=entity,
                 members_count=members_count,
-                reason=f"Yozilmagan guruh ({members_count}+ a'zo)"
+                reason=f"Yozilmagan katta guruh ({members_count:,} a'zo)"
             ))
 
         targets.sort(key=lambda x: x.members_count, reverse=True)
@@ -316,12 +349,8 @@ class ChatCleaner:
         return targets
 
     async def delete_target(self, target: ChatTarget) -> Tuple_Result:
-        """
-        Bitta chatni xavfsiz o'chiradi va FloodWait xatoliklarini avtomatik kutib turadi.
-        """
         max_retries = 3
         retry_count = 0
-        
         while retry_count < max_retries:
             try:
                 await self.client.delete_dialog(target.entity, revoke=self.revoke)
@@ -337,16 +366,11 @@ class ChatCleaner:
             except Exception as e:
                 logger.error(f"Kutilmagan xatolik ({target.name}): {e}")
                 return False, str(e)
-                
         return False, "FloodWait tufayli qayta urinishlar tugadi"
 
     async def delete_and_block_bot(self, target: BotTarget) -> Tuple_Result:
-        """
-        Botni bloklaydi (agar Flood bo'lmasa) va chat tarixini to'liq o'chiradi.
-        """
         max_retries = 3
         retry_count = 0
-        
         while retry_count < max_retries:
             try:
                 if time.time() >= self.block_flood_until:
@@ -370,16 +394,11 @@ class ChatCleaner:
             except Exception as e:
                 logger.error(f"Kutilmagan xatolik ({target.name}): {e}")
                 return False, str(e)
-                
         return False, "FloodWait tufayli qayta urinishlar tugadi"
 
     async def leave_and_delete_group(self, target: GroupTarget) -> Tuple_Result:
-        """
-        Guruhdan chiqadi va dialoglar ro'yxatidan o'chiradi.
-        """
         max_retries = 3
         retry_count = 0
-        
         while retry_count < max_retries:
             try:
                 await self.client.delete_dialog(target.entity)
@@ -395,7 +414,6 @@ class ChatCleaner:
             except Exception as e:
                 logger.error(f"Kutilmagan xatolik ({target.name}): {e}")
                 return False, str(e)
-                
         return False, "FloodWait tufayli qayta urinishlar tugadi"
 
     async def clean_all(

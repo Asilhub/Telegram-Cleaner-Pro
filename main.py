@@ -347,8 +347,42 @@ async def process_group_cleaning(client, session_name: str, min_members: int, dr
         console.print(f"[dim]ℹ️ Sinov (Dry Run) rejimi: Hech qanday guruhdan chiqilmadi.[/dim]")
         return
 
+    console.print("\n[bold]Chiqmoqchi bo'lgan guruhlaringizni tanlang:[/bold]")
+    console.print("  • [bold green]all[/bold green] — Jadvaldagi barcha guruhlardan chiqish")
+    console.print("  • [bold yellow]1, 3, 5[/bold yellow] — Faqat tanlangan raqamlardagi guruhlardan chiqish")
+    console.print("  • [bold red]0[/bold red] — Bekor qilish")
+    
+    choice = Prompt.ask("\nTanlovingizni kiriting", default="all").strip().lower()
+
+    if choice in ("0", "cancel", "yoq", "n"):
+        console.print("[yellow]Amal bekor qilindi.[/yellow]")
+        return
+
+    selected_targets = []
+    if choice == "all":
+        selected_targets = group_targets
+    else:
+        try:
+            indices = set()
+            for part in choice.split(","):
+                part = part.strip()
+                if "-" in part:
+                    start, end = map(int, part.split("-"))
+                    indices.update(range(start, end + 1))
+                elif part.isdigit():
+                    indices.add(int(part))
+            
+            selected_targets = [group_targets[i - 1] for i in sorted(indices) if 1 <= i <= len(group_targets)]
+        except Exception:
+            console.print("[red]Noto'g'ri tanlov kiritildi![/red]")
+            return
+
+    if not selected_targets:
+        console.print("[yellow]Hech qanday guruh tanlanmadi.[/yellow]")
+        return
+
     confirm = Confirm.ask(
-        f"[bold red]⚠️ Yuqoridagi {len(group_targets)} ta guruhdan CHIQISH va RO'YXATDAN O'CHIRISHNI tasdiqlaysizmi?[/bold red]",
+        f"[bold red]⚠️ Tanlangan {len(selected_targets)} ta guruhdan CHIQISH va O'CHIRISHNI tasdiqlaysizmi?[/bold red]",
         default=False
     )
     if not confirm:
@@ -363,13 +397,13 @@ async def process_group_cleaning(client, session_name: str, min_members: int, dr
         TaskProgressColumn(),
         console=console
     ) as progress:
-        task = progress.add_task("[red]Guruhlardan chiqilmoqda...", total=len(group_targets))
+        task = progress.add_task("[red]Guruhlardan chiqilmoqda...", total=len(selected_targets))
 
         def status_cb(current, total, target, success, msg):
             status_text = "[green]Chiqildi & O'chirildi[/green]" if success else f"[red]{msg}[/red]"
             progress.update(task, completed=current, description=f"[bold]{target.name[:15]}[/bold]: {status_text}")
 
-        stats = await cleaner.clean_all_groups(group_targets, status_callback=status_cb)
+        stats = await cleaner.clean_all_groups(selected_targets, status_callback=status_cb)
 
     console.print(Panel(
         f"[bold green]✓ Guruhlarni tozalash yakunlandi![/bold green]\n\n"
