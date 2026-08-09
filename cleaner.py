@@ -53,6 +53,19 @@ class BotTarget:
     def __repr__(self):
         return f"<BotTarget {self.name} ({self.username}) - {self.months_inactive} oy oldin>"
 
+class GroupTarget:
+    def __init__(self, dialog, entity, members_count: int, reason: str = "Siz xabar yozmagan guruh"):
+        self.dialog = dialog
+        self.entity = entity
+        self.id = entity.id
+        self.name = dialog.name or f"Group_{entity.id}"
+        self.username = f"@{entity.username}" if getattr(entity, 'username', None) else "Yopiq guruh"
+        self.members_count = members_count
+        self.reason = reason
+
+    def __repr__(self):
+        return f"<GroupTarget {self.name} ({self.members_count} a'zo)>"
+
 class ChatCleaner:
     def __init__(self, client: TelegramClient, whitelist: Optional[Set] = None):
         self.client = client
@@ -70,7 +83,6 @@ class ChatCleaner:
         Tezkor skanerlash: dialog.message orqali yozishmasi bor (3+ xabar) chatlarni darhol SKIP qiladi.
         """
         targets: List[ChatTarget] = []
-        
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
         
@@ -236,6 +248,73 @@ class ChatCleaner:
 
         return targets
 
+    async def scan_suspicious_groups(
+        self,
+        min_members: int = 200,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> List[GroupTarget]:
+        """
+        Siz umuman xabar yozmagan, majburiy qo'shilgan guruhlarni (200+ a'zoli) aniqlaydi.
+        Siz admin yoki creator bo'lgan guruhlar tegilmaydi.
+        """
+        targets: List[GroupTarget] = []
+        dialogs = await self.client.get_dialogs()
+        total_dialogs = len(dialogs)
+
+        for index, dialog in enumerate(dialogs):
+            if progress_callback and (index % 5 == 0 or index == total_dialogs - 1):
+                progress_callback(index + 1, total_dialogs, dialog.name or "Noma'lum")
+
+            if not dialog.is_group:
+                continue
+
+            entity = dialog.entity
+            if not entity:
+                continue
+
+            # O'zingiz yaratgan (Creator) yoki Admin bo'lgan guruhlarni o'tkazib yuborish
+            if getattr(entity, 'creator', False):
+                continue
+            if getattr(entity, 'admin_rights', None) is not None:
+                continue
+
+            # Oq ro'yxat tekshiruvi
+            if entity.id in self.whitelist:
+                continue
+            if getattr(entity, 'username', None) and entity.username.lower() in self.whitelist:
+                continue
+            if getattr(entity, 'username', None) and f"@{entity.username.lower()}" in self.whitelist:
+                continue
+
+            # A'zolar sonini aniqlash
+            members_count = getattr(entity, 'participants_count', 0) or 0
+            if members_count < min_members and members_count != 0:
+                continue
+
+            # O'zingiz bu guruhda xabar yozganmisiz tekshirish
+            try:
+                my_msgs = await self.client.get_messages(dialog.input_entity, from_user='me', limit=1)
+                if len(my_msgs) > 0:
+                    # Siz xabar yozgansiz, demak kerakli guruh
+                    continue
+            except Exception as e:
+                logger.warning(f"Guruh xabarlarini tekshirishda xatolik ({dialog.name}): {e}")
+                continue
+
+            targets.append(GroupTarget(
+                dialog=dialog,
+                entity=entity,
+                members_count=members_count,
+                reason=f"Yozilmagan guruh ({members_count}+ a'zo)"
+            ))
+
+        targets.sort(key=lambda x: x.members_count, reverse=True)
+
+        if progress_callback:
+            progress_callback(total_dialogs, total_dialogs, "Tayyor")
+
+        return targets
+
     async def delete_target(self, target: ChatTarget) -> Tuple_Result:
         """
         Bitta chatni xavfsiz o'chiradi va FloodWait xatoliklarini avtomatik kutib turadi.
@@ -270,20 +349,42 @@ class ChatCleaner:
         
         while retry_count < max_retries:
             try:
-                # 1. Botni bloklash (Telegram ko'p bloklashga 12 daqiqa cheklov qo'ygan bo'lsa, xatosiz o'tkazib yuboradi)
                 if time.time() >= self.block_flood_until:
                     try:
                         await self.client(functions.contacts.BlockRequest(id=target.entity))
                     except FloodWaitError as fe:
-                        # Telegram BlockRequest limitiga tushdi, endi faqat chatini o'chirib davom etadi
                         self.block_flood_until = time.time() + fe.seconds
                     except Exception:
                         pass
 
-                # 2. Chatni o'chirish
                 await self.client.delete_dialog(target.entity, revoke=True)
                 await asyncio.sleep(self.delay)
                 return True, "O'chirildi"
+            except FloodWaitError as e:
+                logger.warning(f"Telegram FloodWait: {e.seconds} soniya kutilmoqda...")
+                await asyncio.sleep(e.seconds + 2)
+                retry_count += 1
+            except RPCError as e:
+                logger.error(f"Telegram RPC xatoligi ({target.name}): {e}")
+                return False, f"RPC xatosi: {str(e)}"
+            except Exception as e:
+                logger.error(f"Kutilmagan xatolik ({target.name}): {e}")
+                return False, str(e)
+                
+        return False, "FloodWait tufayli qayta urinishlar tugadi"
+
+    async def leave_and_delete_group(self, target: GroupTarget) -> Tuple_Result:
+        """
+        Guruhdan chiqadi va dialoglar ro'yxatidan o'chiradi.
+        """
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                await self.client.delete_dialog(target.entity)
+                await asyncio.sleep(self.delay)
+                return True, "Guruhdan chiqildi va o'chirildi"
             except FloodWaitError as e:
                 logger.warning(f"Telegram FloodWait: {e.seconds} soniya kutilmoqda...")
                 await asyncio.sleep(e.seconds + 2)
@@ -302,21 +403,15 @@ class ChatCleaner:
         targets: List[ChatTarget],
         status_callback: Optional[Callable[[int, int, ChatTarget, bool, str], None]] = None
     ) -> Dict[str, int]:
-        """
-        Topilgan barcha maqsadli chatlarni ketma-ket tozalaydi.
-        """
         stats = {"total": len(targets), "deleted": 0, "failed": 0}
-        
         for index, target in enumerate(targets):
             success, msg = await self.delete_target(target)
             if success:
                 stats["deleted"] += 1
             else:
                 stats["failed"] += 1
-                
             if status_callback:
                 status_callback(index + 1, len(targets), target, success, msg)
-                
         return stats
 
     async def clean_all_bots(
@@ -324,19 +419,29 @@ class ChatCleaner:
         targets: List[BotTarget],
         status_callback: Optional[Callable[[int, int, BotTarget, bool, str], None]] = None
     ) -> Dict[str, int]:
-        """
-        Topilgan barcha nofaol botlarni bloklab, chatlarini tozalaydi.
-        """
         stats = {"total": len(targets), "deleted": 0, "failed": 0}
-        
         for index, target in enumerate(targets):
             success, msg = await self.delete_and_block_bot(target)
             if success:
                 stats["deleted"] += 1
             else:
                 stats["failed"] += 1
-                
             if status_callback:
                 status_callback(index + 1, len(targets), target, success, msg)
-                
+        return stats
+
+    async def clean_all_groups(
+        self,
+        targets: List[GroupTarget],
+        status_callback: Optional[Callable[[int, int, GroupTarget, bool, str], None]] = None
+    ) -> Dict[str, int]:
+        stats = {"total": len(targets), "deleted": 0, "failed": 0}
+        for index, target in enumerate(targets):
+            success, msg = await self.leave_and_delete_group(target)
+            if success:
+                stats["deleted"] += 1
+            else:
+                stats["failed"] += 1
+            if status_callback:
+                status_callback(index + 1, len(targets), target, success, msg)
         return stats
