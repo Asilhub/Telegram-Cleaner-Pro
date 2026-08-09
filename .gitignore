@@ -1,0 +1,24 @@
+# Python virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment and sensitive credentials
+.env
+
+# Telegram session files (MUTLAQO yuklanmasligi kerak!)
+sessions/
+*.session
+*.session-journal
+
+# IDE and OS files
+.idea/
+.vscode/
+.DS_Store
+*.log
