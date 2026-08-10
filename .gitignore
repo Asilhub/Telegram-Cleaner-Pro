@@ -9,6 +9,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+*.zip
+
 # Environment and sensitive credentials
 .env
 
