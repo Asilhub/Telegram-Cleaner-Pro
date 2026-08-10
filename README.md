@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
   <img src="https://img.shields.io/badge/Linux-Ubuntu%20%2F%20Debian-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
   <img src="https://img.shields.io/badge/macOS-Apple-000000?style=for-the-badge&logo=apple&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-Not%20Required%20(.EXE)-green?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Telegram-MTProto-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" />
 </p>
 
@@ -16,7 +16,31 @@ Telegram hisoblaringizdagi:
 
 barchasini avtomatik aniqlab, bir zumda tozalab beruvchi qulay va xavfsiz Userbot vositasi.
 
-Dasturlashni bilish shart emas — **Windows**da `run.bat`, **Linux**da `run.sh` orqali 1 ta tugma bilan ishga tushadi! 🚀
+**Python o'rnatish shart emas!** Windows uchun tayyor `.EXE` dastur tayyorlab qo'yildi. 🚀
+
+---
+
+## 💻 Windows Uchun Yuklab Olish (Python Shart Emas!)
+
+👉 [**⬇️ Telegram-Cleaner-Pro (.EXE) Yuklab Olish**](https://github.com/Asilhub/Telegram-Cleaner-Pro/releases/download/v1.0.0/Telegram-Cleaner-Pro-Windows-EXE.zip)
+
+### Qanday ishlatiladi?
+1. Yuqoridagi havoladan ZIP faylni yuklab oling va arxivdan chiqaring.
+2. Papka ichidagi **`Telegram-Cleaner-Pro.exe`** fayliga 2 marta bosing.
+3. Bo'ldi! Hech qanday Python o'rnatish talab qilinmaydi.
+
+---
+
+## 🐧 Linux / macOS yoki Termux Uchun
+
+Terminalda quyidagi buyruqni bering:
+
+```bash
+git clone https://github.com/Asilhub/Telegram-Cleaner-Pro.git
+cd Telegram-Cleaner-Pro
+chmod +x run.sh
+./run.sh
+```
 
 ---
 
@@ -34,58 +58,13 @@ Dasturlashni bilish shart emas — **Windows**da `run.bat`, **Linux**da `run.sh`
 5. 👥 **Ko'p hisobli (Multi-Account)**:
    - Bir vaqtning o'zida istalgancha Telegram profilingizni ulab, navbat bilan tozalashingiz mumkin.
 6. ⚡️ **O'ta Tezkor (High Speed)**:
-   - Yozishmasi bor (3+ xabar) bo'lgan barcha chatlarni bir zumda o'tkazib yuboradi (1000 ta chatni bir necha soniyada skanerlaydi).
+   - Yozishmasi bor (3+ xabar) bo'lgan barcha chatlarni bir zumda o'tkazib yuboradi.
 7. 🔍 **Sinov (Dry Run) Rejimi**:
-   - O'chirishdan oldin topilgan barcha chatlar, botlar va guruhlar ro'yxatini jadvalda ko'rsatib, tasdiqlashingizni so'raydi.
+   - O'chirishdan oldin ro'yxatni jadvalda ko'rsatib, tasdiqlashingizni so'raydi.
 
 ---
 
-## 🚀 Qanday Ishga Tushiriladi?
-
-> [!TIP]
-> **API ID va API HASH kiritish shart emas!** Dastur ichida barchasi tayyor sozlangan.
-
-### 🪟 1. Windows Kompyuter Uchun (Juda Oson)
-1. Loyihani yuklab oling:  
-   👉 [**⬇️ Telegram-Cleaner-Pro (ZIP) Yuklab Olish**](https://github.com/Asilhub/Telegram-Cleaner-Pro/archive/refs/heads/main.zip)
-2. ZIP arxivni papkaga chiqaring (**Extract all / Arxivdan chiqarish**).
-3. Papka ichidagi **`run.bat`** fayliga sichqoncha bilan 2 marta bosing — bo'ldi!
-
-> [!NOTE]
-> **Kompyuteringizda Python yo'qmi?**
-> - **1-variant (Avtomatik)**: `run.bat` faylining o'zi Python yo'qligini aniqlab, uni avtomatik tarzda o'rnatib beradi.
-> - **2-variant (Microsoft Store)**: Windows'da **Microsoft Store** ilovasini ochib, qidiruvga `Python 3.12` deb yozing va **"Get" (O'rnatish)** tugmasini bosing (1 daqiqa vaqt oladi).
-> - **3-variant (Rasmiy sayt)**: [python.org/downloads](https://www.python.org/downloads/) saytidan yuklab o'rnatayotganda **"Add python.exe to PATH"** belgisini qo'ying.
-
----
-
-### 🐧 2. Linux (Ubuntu / Debian) va macOS Uchun
-
-Terminalda quyidagi buyruqni bering:
-
-```bash
-git clone https://github.com/Asilhub/Telegram-Cleaner-Pro.git
-cd Telegram-Cleaner-Pro
-chmod +x run.sh
-./run.sh
-```
-
----
-
-### 📱 3. Android (Termux) Uchun
-
-```bash
-pkg update && pkg install git python -y
-git clone https://github.com/Asilhub/Telegram-Cleaner-Pro.git
-cd Telegram-Cleaner-Pro
-bash run.sh
-```
-
----
-
-## 📋 Dastur Menyusidan Foydalanish
-
-Dastur ochilganda:
+## 📋 Dastur Menyusi
 
 ```text
 ═══════════════════════════ ASOSIY MENYU ═══════════════════════════
@@ -100,20 +79,12 @@ Dastur ochilganda:
 ═════════════════════════════════════════════════════════════════════
 ```
 
-1. **5-band** orqali hisobingizni ulang.
-2. Kerakli bandni tanlang:
-   - **`1`** — Bo'sh chatlar va kontakt xabarlarini tozalash.
-   - **`2`** — 9 oydan beri ishlatilmagan botlarni tozalash.
-   - **`3`** — Siz umuman xabar yozmagan 200+ a'zoli keraksiz guruhlardan chiqish (tanlab chiqish mumkin).
-   - **`4`** — Skanerlash (faqat ko'rib chiqish).
-
 ---
 
 ## 🔒 Xavfsizlik Kafolati
 
 - Dastur butunlay **Open Source (Ochiq kodli)**.
-- Barcha hisob sessiyalari (`.session`) faqat sizning qurilmangizdagi `sessions/` papkasida qoladi, hech qanday serverga yuborilmaydi.
-- `.gitignore` sozlangan bo'lib, hisoblaringiz internetga chiqib ketishidan to'liq himoyalangan.
+- Barcha hisob sessiyalari (`.session`) faqat sizning kompyuteringizda qoladi, hech qanday serverga yuborilmaydi.
 
 ---
 
