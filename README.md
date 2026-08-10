@@ -45,13 +45,17 @@ Dasturlashni bilish shart emas — **Windows**da `run.bat`, **Linux**da `run.sh`
 > [!TIP]
 > **API ID va API HASH kiritish shart emas!** Dastur ichida barchasi tayyor sozlangan.
 
-### 🪟 1. Windows Kompyuter Uchun
+### 🪟 1. Windows Kompyuter Uchun (Juda Oson)
 1. Loyihani yuklab oling:  
    👉 [**⬇️ Telegram-Cleaner-Pro (ZIP) Yuklab Olish**](https://github.com/Asilhub/Telegram-Cleaner-Pro/archive/refs/heads/main.zip)
 2. ZIP arxivni papkaga chiqaring (**Extract all / Arxivdan chiqarish**).
-3. Papka ichidagi **`run.bat`** fayliga sichqoncha bilan 2 marta bosing.
+3. Papka ichidagi **`run.bat`** fayliga sichqoncha bilan 2 marta bosing — bo'ldi!
 
-*(Agar Python o'rnatilmagan bo'lsa, [python.org](https://www.python.org/downloads/) dan o'rnatayotganda **"Add python.exe to PATH"** belgisini qo'ying).*
+> [!NOTE]
+> **Kompyuteringizda Python yo'qmi?**
+> - **1-variant (Avtomatik)**: `run.bat` faylining o'zi Python yo'qligini aniqlab, uni avtomatik tarzda o'rnatib beradi.
+> - **2-variant (Microsoft Store)**: Windows'da **Microsoft Store** ilovasini ochib, qidiruvga `Python 3.12` deb yozing va **"Get" (O'rnatish)** tugmasini bosing (1 daqiqa vaqt oladi).
+> - **3-variant (Rasmiy sayt)**: [python.org/downloads](https://www.python.org/downloads/) saytidan yuklab o'rnatayotganda **"Add python.exe to PATH"** belgisini qo'ying.
 
 ---
 
@@ -100,7 +104,7 @@ Dastur ochilganda:
 2. Kerakli bandni tanlang:
    - **`1`** — Bo'sh chatlar va kontakt xabarlarini tozalash.
    - **`2`** — 9 oydan beri ishlatilmagan botlarni tozalash.
-   - **`3`** — Siz umuman xabar yozmagan 200+ a'zoli keraksiz guruhlardan chiqish.
+   - **`3`** — Siz umuman xabar yozmagan 200+ a'zoli keraksiz guruhlardan chiqish (tanlab chiqish mumkin).
    - **`4`** — Skanerlash (faqat ko'rib chiqish).
 
 ---
