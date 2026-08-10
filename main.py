@@ -142,7 +142,7 @@ async def list_accounts(api_id: int, api_hash: str):
     console.print(table)
     return accounts
 
-def select_mode() -> CleanupMode:
+def select_mode() -> tuple[CleanupMode, bool]:
     console.print("\n[bold]Qaysi tozalash rejimini tanlaysiz?[/bold]")
     console.print("  [bold cyan]1.[/bold cyan] Faqat 'Telegramga qo'shildi' servis xabarlari bor chatlar")
     console.print("  [bold cyan]2.[/bold cyan] Bo'sh chatlar (0 ta xabar) + 'Telegramga qo'shildi' chatlari ([italic green]Tavsiya etiladi[/italic green])")
@@ -150,12 +150,16 @@ def select_mode() -> CleanupMode:
     
     choice = Prompt.ask("Rejimni tanlang", choices=["1", "2", "3"], default="2")
     if choice == "1":
-        return CleanupMode.JOINED_ONLY
+        return CleanupMode.JOINED_ONLY, False
     elif choice == "3":
-        return CleanupMode.ALL_SINGLE_MESSAGE
-    return CleanupMode.EMPTY_AND_JOINED
+        include_my_single = Confirm.ask(
+            "\n[bold yellow]O'zingiz 1 ta xabar yozgan (lekin javobsiz qolgan) chatlar ham qo'shilsinmi?[/bold yellow]",
+            default=False
+        )
+        return CleanupMode.ALL_SINGLE_MESSAGE, include_my_single
+    return CleanupMode.EMPTY_AND_JOINED, False
 
-async def process_account_cleaning(client, session_name: str, dry_run: bool, mode: CleanupMode):
+async def process_account_cleaning(client, session_name: str, dry_run: bool, mode: CleanupMode, include_my_single: bool = False):
     cleaner = ChatCleaner(client)
     console.print(f"\n[bold yellow]🔍 [{session_name}] Shaxsiy chatlar skanerlanmoqda...[/bold yellow]")
     
@@ -174,7 +178,7 @@ async def process_account_cleaning(client, session_name: str, dry_run: bool, mod
             progress.update(task, total=total, completed=current, description=f"[cyan]Skanerlanmoqda: [white]{name[:20]}[/white]")
 
         await client.connect()
-        targets = await cleaner.scan_dialogs(mode=mode, progress_callback=progress_cb)
+        targets = await cleaner.scan_dialogs(mode=mode, include_my_single=include_my_single, progress_callback=progress_cb)
 
     if not targets:
         console.print(f"[bold green]✓ [{session_name}] Tozalash uchun keraksiz/bo'sh chatlar topilmadi![/bold green]")
@@ -426,7 +430,7 @@ async def run_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
         console.print(f"  [bold cyan]{i}.[/bold cyan] 📱 {s.stem}")
 
     choice = Prompt.ask("Tanlang", choices=[str(i) for i in range(len(sessions) + 1)], default="0")
-    mode = select_mode()
+    mode, include_my_single = select_mode()
 
     if choice == "0":
         for s in sessions:
@@ -434,7 +438,7 @@ async def run_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
             try:
                 await client.connect()
                 if await client.is_user_authorized():
-                    await process_account_cleaning(client, s.stem, dry_run=dry_run, mode=mode)
+                    await process_account_cleaning(client, s.stem, dry_run=dry_run, mode=mode, include_my_single=include_my_single)
                 else:
                     console.print(f"[red]⚠️ [{s.stem}] Sessiyasi faol emas, o'tkazib yuborildi.[/red]")
             finally:
@@ -446,7 +450,7 @@ async def run_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
         try:
             await client.connect()
             if await client.is_user_authorized():
-                await process_account_cleaning(client, selected_session.stem, dry_run=dry_run, mode=mode)
+                await process_account_cleaning(client, selected_session.stem, dry_run=dry_run, mode=mode, include_my_single=include_my_single)
             else:
                 console.print(f"[red]⚠️ [{selected_session.stem}] Sessiyasi faol emas.[/red]")
         finally:

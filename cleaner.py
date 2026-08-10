@@ -77,8 +77,13 @@ class ChatCleaner:
     async def scan_dialogs(
         self,
         mode: CleanupMode = CleanupMode.EMPTY_AND_JOINED,
+        include_my_single: bool = False,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> List[ChatTarget]:
+        """
+        Tezkor skanerlash: dialog.message orqali yozishmasi bor (3+ xabar) chatlarni darhol SKIP qiladi.
+        include_my_single: Foydalanuvchi o'zi 1 ta xabar yozgan (javobsiz qolgan) chatlar ham qo'shilsinmi.
+        """
         targets: List[ChatTarget] = []
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
@@ -115,7 +120,7 @@ class ChatCleaner:
                     targets.append(ChatTarget(
                         dialog=dialog,
                         entity=entity,
-                        reason="Bo'sh chat (0 ta xabar)",
+                        reason="📭 Bo'sh chat (0 ta xabar)",
                         message_count=0
                     ))
                 continue
@@ -155,7 +160,7 @@ class ChatCleaner:
                 targets.append(ChatTarget(
                     dialog=dialog,
                     entity=entity,
-                    reason="Bo'sh chat (0 ta xabar)",
+                    reason="📭 Bo'sh chat (0 ta xabar)",
                     message_count=0
                 ))
                 continue
@@ -170,16 +175,35 @@ class ChatCleaner:
                 ))
                 continue
 
+            # Faqat 1 ta xabar bo'lgan holat
             if mode == CleanupMode.ALL_SINGLE_MESSAGE and msg_count == 1:
-                txt = messages[0].text or ""
+                first_msg = messages[0]
+                is_out = getattr(first_msg, 'out', False)
+                txt = first_msg.text or ""
                 snippet = (txt[:30] + '...') if len(txt) > 30 else txt
-                targets.append(ChatTarget(
-                    dialog=dialog,
-                    entity=entity,
-                    reason="1 ta xabarlik nofaol chat",
-                    message_count=1,
-                    last_message_text=snippet or "[Media/Boshqa]"
-                ))
+
+                if is_out:
+                    # O'zingiz yozgan xabar
+                    if include_my_single:
+                        targets.append(ChatTarget(
+                            dialog=dialog,
+                            entity=entity,
+                            reason="📤 O'zingiz yozgan javobsiz chat (1 ta xabar)",
+                            message_count=1,
+                            last_message_text=f"Siz: {snippet or '[Media/Stiker]'}"
+                        ))
+                    else:
+                        # O'zingiz yozgan chatlarni saqlab qolish
+                        continue
+                else:
+                    # Narigi tomon yozgan 1 ta xabar
+                    targets.append(ChatTarget(
+                        dialog=dialog,
+                        entity=entity,
+                        reason="✉️ Narigi tomon yozgan nofaol chat (1 ta xabar)",
+                        message_count=1,
+                        last_message_text=f"U: {snippet or '[Media/Stiker]'}"
+                    ))
 
         if progress_callback:
             progress_callback(total_dialogs, total_dialogs, "Tayyor")
@@ -246,12 +270,6 @@ class ChatCleaner:
         min_members: int = 200,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> List[GroupTarget]:
-        """
-        Shubhali guruhlarni aniqlash:
-        1. Oddiy kichik shaxsiy guruhlar (Chat) avtomatik saqlanadi (SKIP qilinadi).
-        2. Faqat Supergroup / Megagroup bo'lgan va a'zolari min_members dan ortiq bo'lgan guruhlar tekshiriladi.
-        3. O'zingiz xabar yozgan yoki forward qilgan guruhlar SAQLANADI (o'chirilmaydi).
-        """
         targets: List[GroupTarget] = []
         dialogs = await self.client.get_dialogs()
         total_dialogs = len(dialogs)
@@ -263,7 +281,6 @@ class ChatCleaner:
             if progress_callback and (index % 5 == 0 or index == total_dialogs - 1):
                 progress_callback(index + 1, total_dialogs, dialog.name or "Noma'lum")
 
-            # Faqat guruhlarni tekshirish
             if not dialog.is_group:
                 continue
 
@@ -271,18 +288,14 @@ class ChatCleaner:
             if not entity:
                 continue
 
-            # 1. Oddiy kichik shaxsiy guruhlar (types.Chat - sinfdoshlar, oila, do'stlar)ni SAQLAB QOLISH
-            # Spam guruhlar har doim supergroup (types.Channel) bo'ladi.
             if isinstance(entity, types.Chat):
                 continue
 
-            # 2. O'zingiz yaratgan (Creator) yoki Admin bo'lgan guruhlarni SAQLASH
             if getattr(entity, 'creator', False):
                 continue
             if getattr(entity, 'admin_rights', None) is not None:
                 continue
 
-            # 3. Oq ro'yxat tekshiruvi
             if entity.id in self.whitelist:
                 continue
             if getattr(entity, 'username', None) and entity.username.lower() in self.whitelist:
@@ -290,7 +303,6 @@ class ChatCleaner:
             if getattr(entity, 'username', None) and f"@{entity.username.lower()}" in self.whitelist:
                 continue
 
-            # 4. A'zolar sonini aniq olish (FullChannel orqali)
             members_count = getattr(entity, 'participants_count', None)
             if members_count is None:
                 try:
@@ -299,21 +311,17 @@ class ChatCleaner:
                 except Exception:
                     members_count = 0
 
-            # Agar a'zolar soni belgilangan sondan (masalan: 200 ta) kam bo'lsa -> SAQLASH
             if members_count < min_members:
                 continue
 
-            # 5. O'zingiz bu guruhda biron marta xabar yozganmisiz / forward qilganmisiz tekshirish
             user_participated = False
             try:
-                # 5.1 Oxirgi 40 ta xabarni tekshirish (agar yaqinda yozgan/forward qilgan bo'lsangiz)
                 recent_msgs = await self.client.get_messages(dialog.input_entity, limit=40)
                 for m in recent_msgs:
                     if getattr(m, 'out', False) or getattr(m, 'sender_id', None) == my_id or getattr(m, 'from_id', None) == my_id:
                         user_participated = True
                         break
 
-                # 5.2 Agar oxirgi xabarlarda chiqmasa, qidiruv orqali tekshirish
                 if not user_participated:
                     my_msgs = await self.client.get_messages(dialog.input_entity, from_user='me', limit=1)
                     if len(my_msgs) > 0:
@@ -326,14 +334,11 @@ class ChatCleaner:
 
             except Exception as e:
                 logger.warning(f"Guruh xabarlarini tekshirishda ogohlantirish ({dialog.name}): {e}")
-                # Xatolik bo'lsa xavfsizlik uchun bu guruhga teginmaslik
                 continue
 
-            # Agar siz bu guruhda yozgan bo'lsangiz -> SAQLASH
             if user_participated:
                 continue
 
-            # Faqat hech qachon yozilmagan katta guruhlargina qo'shiladi
             targets.append(GroupTarget(
                 dialog=dialog,
                 entity=entity,
