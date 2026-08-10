@@ -22,7 +22,7 @@ barchasini avtomatik aniqlab, bir zumda tozalab beruvchi qulay va xavfsiz Userbo
 
 ## 💻 Windows Uchun Yuklab Olish (Python Shart Emas!)
 
-👉 [**⬇️ Telegram-Cleaner-Pro (.EXE) Yuklab Olish**](https://github.com/Asilhub/Telegram-Cleaner-Pro/releases/download/v1.0.0/Telegram-Cleaner-Pro-Windows-EXE.zip)
+👉 [**⬇️ Telegram-Cleaner-Pro (.EXE) Yuklab Olish**](https://github.com/Asilhub/Telegram-Cleaner-Pro/releases/latest/download/Telegram-Cleaner-Pro-Windows-EXE.zip)
 
 ### Qanday ishlatiladi?
 1. Yuqoridagi havoladan ZIP faylni yuklab oling va arxivdan chiqaring.
