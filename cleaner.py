@@ -74,19 +74,290 @@ class ChatCleaner:
         self.revoke = get_revoke_for_all()
         self.block_flood_until = 0.0
 
+    @staticmethod
+    def get_dialog_stats(dialogs) -> Dict[str, int]:
+        stats = {
+            "total": len(dialogs),
+            "users": 0,
+            "bots": 0,
+            "groups": 0,
+            "channels": 0
+        }
+        for d in dialogs:
+            entity = d.entity
+            if d.is_user:
+                if getattr(entity, 'bot', False):
+                    stats["bots"] += 1
+                else:
+                    stats["users"] += 1
+            elif d.is_group:
+                stats["groups"] += 1
+            elif d.is_channel:
+                stats["channels"] += 1
+        return stats
+
+    @staticmethod
+    def is_deleted_bot(dialog, entity) -> bool:
+        """O'chib ketgan account aslida BOT ekanligini xabarlar strukturasi va tugmalari orqali aniqlaydi"""
+        if not getattr(entity, 'deleted', False):
+            return False
+
+        if getattr(entity, 'bot', False):
+            return True
+
+        if getattr(entity, 'username', None) and entity.username.lower().endswith('bot'):
+            return True
+
+        if 'bot' in (dialog.name or '').lower():
+            return True
+
+        msg = dialog.message
+        if msg:
+            if getattr(msg, 'reply_markup', None) is not None:
+                return True
+
+            txt = getattr(msg, 'text', '') or ''
+            if '/start' in txt.lower() or txt.startswith('/'):
+                return True
+
+        return False
+
+    async def get_all_dialogs_summary(self) -> Tuple[Dict[str, int], List[Dict]]:
+        """Akauntdagi barcha chatlar va ularning batafsil statistikasi ile ro'yxatini oladi"""
+        dialogs = await self.client.get_dialogs()
+        stats = self.get_dialog_stats(dialogs)
+        dialog_list = []
+        for d in dialogs:
+            entity = d.entity
+            if d.is_user:
+                if getattr(entity, 'bot', False):
+                    d_type = "🤖 Bot"
+                else:
+                    d_type = "👤 Shaxsiy"
+            elif d.is_group:
+                d_type = "👥 Guruh"
+            elif d.is_channel:
+                d_type = "📢 Kanal"
+            else:
+                d_type = "💬 Chat"
+
+            name = d.name or f"Chat_{d.id}"
+            username = f"@{entity.username}" if getattr(entity, 'username', None) else "-"
+            top_msg = d.message
+            msg_snippet = ""
+            if top_msg:
+                txt = top_msg.text or ""
+                msg_snippet = (txt[:30] + '...') if len(txt) > 30 else txt
+
+            dialog_list.append({
+                "id": d.id,
+                "name": name,
+                "type": d_type,
+                "username": username,
+                "date": d.date.strftime("%Y-%m-%d %H:%M") if d.date else "-",
+                "unread": d.unread_count,
+                "last_msg": msg_snippet
+            })
+
+        return stats, dialog_list
+
+    async def categorize_all_dialogs(self) -> Dict[str, List[Dict]]:
+        """Akauntdagi barcha chatlarni papkalar va alohida kategoriyalar bo'yicha ajratadi"""
+        dialogs = await self.client.get_dialogs()
+        
+        categories: Dict[str, List[Dict]] = {
+            "admin_channels": [],    # 👑 Siz Admin/Ega bo'lgan Kanallar
+            "admin_groups": [],      # 👑 Siz Admin/Ega bo'lgan Guruhlar
+            "personal_users": [],    # 👤 Shaxsiy Chatlar (Jonli)
+            "deleted_users": [],     # 👻 O'chirilgan Hisoblar (Deleted Account)
+            "active_bots": [],       # 🤖 Faol Botlar
+            "deleted_bots": [],      # 🤖👻 O'chirilgan Botlar (Deleted Bot)
+            "public_channels": [],   # 📢 Ommaviy (Public) Kanallar
+            "private_channels": [],  # 🔒 Yopiq (Private) Kanallar
+            "public_groups": [],     # 👥 Ommaviy (Public) Guruhlar
+            "private_groups": []     # 🔒 Yopiq (Private) Guruhlar
+        }
+
+        for d in dialogs:
+            entity = d.entity
+            name = d.name or f"Chat_{d.id}"
+            username = f"@{entity.username}" if getattr(entity, 'username', None) else "-"
+            top_msg = d.message
+            msg_snippet = ""
+            if top_msg:
+                txt = top_msg.text or ""
+                msg_snippet = (txt[:30] + '...') if len(txt) > 30 else txt
+
+            item = {
+                "id": d.id,
+                "name": name,
+                "username": username,
+                "date": d.date.strftime("%Y-%m-%d %H:%M") if d.date else "-",
+                "unread": d.unread_count,
+                "last_msg": msg_snippet
+            }
+
+            if d.is_user:
+                is_deleted = getattr(entity, 'deleted', False)
+                is_bot = getattr(entity, 'bot', False)
+                is_del_bot = self.is_deleted_bot(d, entity)
+
+                if is_deleted and is_del_bot:
+                    categories["deleted_bots"].append(item)
+                elif is_deleted:
+                    categories["deleted_users"].append(item)
+                elif is_bot:
+                    categories["active_bots"].append(item)
+                else:
+                    categories["personal_users"].append(item)
+
+            elif d.is_channel and not d.is_group:
+                # Broadcast Channel
+                is_admin = getattr(entity, 'creator', False) or getattr(entity, 'admin_rights', None) is not None
+                if is_admin:
+                    categories["admin_channels"].append(item)
+                elif getattr(entity, 'username', None):
+                    categories["public_channels"].append(item)
+                else:
+                    categories["private_channels"].append(item)
+
+            elif d.is_group:
+                # Basic Group or Supergroup (Megagroup)
+                is_admin = getattr(entity, 'creator', False) or getattr(entity, 'admin_rights', None) is not None
+                if is_admin:
+                    categories["admin_groups"].append(item)
+                elif getattr(entity, 'username', None):
+                    categories["public_groups"].append(item)
+                else:
+                    categories["private_groups"].append(item)
+
+        return categories
+
+    async def create_telegram_folders(self) -> Dict[str, str]:
+        """
+        Telegram ilovasining o'zida avtomatik ravishda haqiqiy Chat Papkalarini (Folders) yaratadi.
+        """
+        results = {}
+        dialogs = await self.client.get_dialogs()
+
+        admin_peers = []
+        deleted_user_peers = []
+        deleted_bot_peers = []
+
+        for d in dialogs:
+            entity = d.entity
+            try:
+                input_p = utils.get_input_peer(entity)
+            except Exception:
+                input_p = d.input_entity
+
+            if not input_p:
+                continue
+
+            if d.is_user and getattr(entity, 'deleted', False):
+                if self.is_deleted_bot(d, entity):
+                    deleted_bot_peers.append(input_p)
+                else:
+                    deleted_user_peers.append(input_p)
+            elif d.is_channel or d.is_group:
+                is_admin = getattr(entity, 'creator', False) or getattr(entity, 'admin_rights', None) is not None
+                if is_admin:
+                    admin_peers.append(input_p)
+
+        all_deleted_peers = deleted_user_peers + deleted_bot_peers
+
+        existing_title_to_id = {}
+        used_ids = []
+        try:
+            existing_filters = await self.client(functions.messages.GetDialogFiltersRequest())
+            for f in existing_filters:
+                if hasattr(f, 'id'):
+                    if f.id not in used_ids:
+                        used_ids.append(f.id)
+                    t_str = ""
+                    if hasattr(f, 'title'):
+                        if isinstance(f.title, types.TextWithEntities):
+                            t_str = f.title.text
+                        elif isinstance(f.title, str):
+                            t_str = f.title
+                    if t_str:
+                        existing_title_to_id[t_str.strip().lower()] = f.id
+        except Exception:
+            used_ids = []
+
+        def get_id_for_title(clean_title: str) -> int:
+            clean_lower = clean_title.lower()
+            for k, fid in existing_title_to_id.items():
+                if clean_lower in k or k in clean_lower:
+                    return fid
+            for i in range(2, 30):
+                if i not in used_ids:
+                    used_ids.append(i)
+                    return i
+            return 2
+
+        folder_definitions = [
+            ("Admin", "👑", {"include_peers": admin_peers[:100]}, len(admin_peers) > 0),
+            ("Shaxsiy", "👤", {"contacts": True, "non_contacts": True, "bots": False, "groups": False, "broadcasts": False}, True),
+            ("Botlar", "🤖", {"bots": True, "contacts": False, "non_contacts": False, "groups": False, "broadcasts": False}, True),
+            ("Kanallar", "📢", {"broadcasts": True, "contacts": False, "non_contacts": False, "groups": False, "bots": False}, True),
+            ("Guruhlar", "👥", {"groups": True, "contacts": False, "non_contacts": False, "broadcasts": False, "bots": False}, True),
+            ("Deleted", "👻", {"include_peers": all_deleted_peers[:100]}, len(all_deleted_peers) > 0),
+            ("Deleted Bot", "🤖", {"include_peers": deleted_bot_peers[:100]}, True),
+        ]
+
+        active_order_ids = []
+
+        for title, emoji, kwargs, condition in folder_definitions:
+            if not condition:
+                continue
+            folder_id = get_id_for_title(title)
+            if folder_id not in active_order_ids:
+                active_order_ids.append(folder_id)
+
+            df = types.DialogFilter(
+                id=folder_id,
+                title=types.TextWithEntities(text=title, entities=[]),
+                emoticon=emoji,
+                pinned_peers=[],
+                include_peers=kwargs.get("include_peers", []),
+                exclude_peers=[],
+                contacts=kwargs.get("contacts", None),
+                non_contacts=kwargs.get("non_contacts", None),
+                groups=kwargs.get("groups", None),
+                broadcasts=kwargs.get("broadcasts", None),
+                bots=kwargs.get("bots", None)
+            )
+            try:
+                await self.client(functions.messages.UpdateDialogFilterRequest(id=folder_id, filter=df))
+                results[title] = "Muvaffaqiyatli yangilandi ✓"
+            except Exception as e:
+                results[title] = f"Xatolik: {e}"
+
+        # Update folder ordering so Telegram Desktop refreshes instantly
+        if active_order_ids:
+            try:
+                all_ids = list(dict.fromkeys(active_order_ids + used_ids))
+                await self.client(functions.messages.UpdateDialogFiltersOrderRequest(order=all_ids))
+            except Exception:
+                pass
+
+        return results
+
     async def scan_dialogs(
         self,
         mode: CleanupMode = CleanupMode.EMPTY_AND_JOINED,
         include_my_single: bool = False,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
-    ) -> List[ChatTarget]:
+    ) -> Tuple[List[ChatTarget], Dict[str, int]]:
         """
         Tezkor skanerlash: dialog.message orqali yozishmasi bor (3+ xabar) chatlarni darhol SKIP qiladi.
         include_my_single: Foydalanuvchi o'zi 1 ta xabar yozgan (javobsiz qolgan) chatlar ham qo'shilsinmi.
         """
         targets: List[ChatTarget] = []
         dialogs = await self.client.get_dialogs()
-        total_dialogs = len(dialogs)
+        stats = self.get_dialog_stats(dialogs)
+        total_dialogs = stats["total"]
         
         for index, dialog in enumerate(dialogs):
             if progress_callback and (index % 10 == 0 or index == total_dialogs - 1):
@@ -208,16 +479,17 @@ class ChatCleaner:
         if progress_callback:
             progress_callback(total_dialogs, total_dialogs, "Tayyor")
 
-        return targets
+        return targets, stats
 
     async def scan_inactive_bots(
         self,
         months_threshold: float = 9.0,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
-    ) -> List[BotTarget]:
+    ) -> Tuple[List[BotTarget], Dict[str, int]]:
         targets: List[BotTarget] = []
         dialogs = await self.client.get_dialogs()
-        total_dialogs = len(dialogs)
+        stats = self.get_dialog_stats(dialogs)
+        total_dialogs = stats["total"]
         now = datetime.now(timezone.utc)
 
         for index, dialog in enumerate(dialogs):
@@ -263,16 +535,17 @@ class ChatCleaner:
         if progress_callback:
             progress_callback(total_dialogs, total_dialogs, "Tayyor")
 
-        return targets
+        return targets, stats
 
     async def scan_suspicious_groups(
         self,
         min_members: int = 200,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
-    ) -> List[GroupTarget]:
+    ) -> Tuple[List[GroupTarget], Dict[str, int]]:
         targets: List[GroupTarget] = []
         dialogs = await self.client.get_dialogs()
-        total_dialogs = len(dialogs)
+        stats = self.get_dialog_stats(dialogs)
+        total_dialogs = stats["total"]
 
         me = await self.client.get_me()
         my_id = me.id
@@ -351,7 +624,7 @@ class ChatCleaner:
         if progress_callback:
             progress_callback(total_dialogs, total_dialogs, "Tayyor")
 
-        return targets
+        return targets, stats
 
     async def delete_target(self, target: ChatTarget) -> Tuple_Result:
         max_retries = 3

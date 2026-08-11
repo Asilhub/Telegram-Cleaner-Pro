@@ -46,20 +46,22 @@ chmod +x run.sh
 
 ## ✨ Asosiy Imkoniyatlar
 
-1. 👥 **Shubhali va Keraksiz Guruhlarni Tozalash**:
+1. 📂 **Telegram Ilovasida Avtomatik Papkalar (Folders) Yaratish**:
+   - Telegram ilovangizda (Desktop/Mobile) avtomatik ravishda `Admin`, `Shaxsiy`, `Botlar`, `Kanallar`, `Guruhlar`, `Deleted` va `Deleted Bot` papkalarini yaratadi.
+2. 👥 **Shubhali va Keraksiz Guruhlarni Tozalash**:
    - Sizni kimdir majburlab qo'shib yuborgan, o'zingiz biror marta xabar yozmagan 200+ a'zoli guruhlardan avtomatik chiqadi va o'chiradi.
    - *O'zingiz yaratgan (Creator) yoki Admin bo'lgan guruhlarga mutlaqo teginmaydi!*
-2. 🤖 **Nofaol Botlarni Tozalash (Block & Delete)**:
+3. 🤖 **Nofaol Botlarni Tozalash (Block & Delete)**:
    - 9 oy (yoki o'zingiz kiritgan muddat) davomida ishlatilmagan botlarni bloklaydi va chatlarini tozalaydi.
-3. 📌 **"Telegramga qo'shildi" xabarlarini tozalash**:
+4. 📌 **"Telegramga qo'shildi" xabarlarini tozalash**:
    - Kontaktlar ro'yxatidan ochilib qolgan keraksiz lichkalarni o'chiradi.
-4. 📭 **Bo'sh chatlarni tozalash**:
+5. 📭 **Bo'sh chatlarni tozalash**:
    - Hech qanday xabar almashilmagan (0 ta xabar) barcha shaxsiy chatlarni topib o'chiradi.
-5. 👥 **Ko'p hisobli (Multi-Account)**:
+6. 📊 **Barcha Chatlarni Sanash va Saralash**:
+   - Akauntdagi barcha chatlarni 10 xil toifa (Admin, Deleted, Botlar, Public/Private) bo'yicha ajratadi va sanaydi.
+7. 👥 **Ko'p hisobli (Multi-Account)**:
    - Bir vaqtning o'zida istalgancha Telegram profilingizni ulab, navbat bilan tozalashingiz mumkin.
-6. ⚡️ **O'ta Tezkor (High Speed)**:
-   - Yozishmasi bor (3+ xabar) bo'lgan barcha chatlarni bir zumda o'tkazib yuboradi.
-7. 🔍 **Sinov (Dry Run) Rejimi**:
+8. 🔍 **Sinov (Dry Run) Rejimi**:
    - O'chirishdan oldin ro'yxatni jadvalda ko'rsatib, tasdiqlashingizni so'raydi.
 
 ---
@@ -71,10 +73,13 @@ chmod +x run.sh
   1. 🧹 Bo'sh va 'Kontakt qo'shildi' chatlarni tozalash (Delete)
   2. 🤖 9+ oy ishlatilmagan botlarni tozalash (Block & Delete)
   3. 👥 Shubhali guruhlardan chiqish (Yozilmagan 200+ a'zoli)
-  4. 🔍 Skanerlash (Faqat ko'rish / Dry-run)
-  5. ➕ Yangi Telegram hisob qo'shish
-  6. 📱 Ulangan hisoblar ro'yxati
-  7. 🗑️ Hisobni tizimdan o'chirish
+  4. 📂 TELEGRAM ILOVASIDA PAPKALAR (Folders) YARATISH 🚀 ⭐
+  5. 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralab ko'rish
+  6. 🔍 Skanerlash (Faqat ko'rish / Dry-run)
+  7. 📊 Akauntdagi BARCHA chatlarni sanash (To'liq statistika)
+  8. ➕ Yangi Telegram hisob qo'shish
+  9. 📱 Ulangan hisoblar ro'yxati
+  10. 🗑️ Hisobni tizimdan o'chirish
   0. 🚪 Chiqish
 ═════════════════════════════════════════════════════════════════════
 ```

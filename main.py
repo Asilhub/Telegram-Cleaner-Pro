@@ -178,7 +178,15 @@ async def process_account_cleaning(client, session_name: str, dry_run: bool, mod
             progress.update(task, total=total, completed=current, description=f"[cyan]Skanerlanmoqda: [white]{name[:20]}[/white]")
 
         await client.connect()
-        targets = await cleaner.scan_dialogs(mode=mode, include_my_single=include_my_single, progress_callback=progress_cb)
+        targets, stats = await cleaner.scan_dialogs(mode=mode, include_my_single=include_my_single, progress_callback=progress_cb)
+
+    console.print(Panel(
+        f"📊 [bold yellow]Akauntdagi jami chatlar:[/bold yellow] [bold white]{stats['total']}[/bold white] ta\n"
+        f"└─ 👤 Shaxsiy: [cyan]{stats['users']}[/cyan] | 🤖 Botlar: [cyan]{stats['bots']}[/cyan] | 👥 Guruhlar: [cyan]{stats['groups']}[/cyan] | 📢 Kanallar: [cyan]{stats['channels']}[/cyan]\n"
+        f"🎯 [bold red]Tozalash uchun saralangan chatlar:[/bold red] [bold white]{len(targets)}[/bold white] ta",
+        title=f"[{session_name}] Account Statistikasi",
+        border_style="cyan"
+    ))
 
     if not targets:
         console.print(f"[bold green]✓ [{session_name}] Tozalash uchun keraksiz/bo'sh chatlar topilmadi![/bold green]")
@@ -251,7 +259,15 @@ async def process_bot_cleaning(client, session_name: str, months_threshold: floa
             progress.update(task, total=total, completed=current, description=f"[cyan]Tekshirilmoqda: [white]{name[:20]}[/white]")
 
         await client.connect()
-        bot_targets = await cleaner.scan_inactive_bots(months_threshold=months_threshold, progress_callback=progress_cb)
+        bot_targets, stats = await cleaner.scan_inactive_bots(months_threshold=months_threshold, progress_callback=progress_cb)
+
+    console.print(Panel(
+        f"📊 [bold yellow]Akauntdagi jami chatlar:[/bold yellow] [bold white]{stats['total']}[/bold white] ta "
+        f"([cyan]🤖 Jami botlar: {stats['bots']}[/cyan])\n"
+        f"🎯 [bold red]Nofaol ({months_threshold}+ oy) botlar:[/bold red] [bold white]{len(bot_targets)}[/bold white] ta",
+        title=f"[{session_name}] Botlar Statistikasi",
+        border_style="cyan"
+    ))
 
     if not bot_targets:
         console.print(f"[bold green]✓ [{session_name}] {months_threshold}+ oydan beri ishlatilmagan nofaol botlar topilmadi![/bold green]")
@@ -323,7 +339,15 @@ async def process_group_cleaning(client, session_name: str, min_members: int, dr
             progress.update(task, total=total, completed=current, description=f"[cyan]Tekshirilmoqda: [white]{name[:20]}[/white]")
 
         await client.connect()
-        group_targets = await cleaner.scan_suspicious_groups(min_members=min_members, progress_callback=progress_cb)
+        group_targets, stats = await cleaner.scan_suspicious_groups(min_members=min_members, progress_callback=progress_cb)
+
+    console.print(Panel(
+        f"📊 [bold yellow]Akauntdagi jami chatlar:[/bold yellow] [bold white]{stats['total']}[/bold white] ta "
+        f"([cyan]👥 Jami guruhlar: {stats['groups']}[/cyan])\n"
+        f"🎯 [bold red]Shubhali/Yozilmagan guruhlar ({min_members}+ a'zoli):[/bold red] [bold white]{len(group_targets)}[/bold white] ta",
+        title=f"[{session_name}] Guruhlar Statistikasi",
+        border_style="cyan"
+    ))
 
     if not group_targets:
         console.print(f"[bold green]✓ [{session_name}] Siz yozmagan {min_members}+ a'zoli shubhali guruhlar topilmadi![/bold green]")
@@ -543,20 +567,255 @@ async def run_group_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
             if client.is_connected():
                 await client.disconnect()
 
+async def run_all_chats_count_flow(api_id: int, api_hash: str):
+    sessions = session_mgr.list_sessions()
+    if not sessions:
+        console.print("[yellow]Hech qanday hisob ulanmagan! Avval hisob qo'shing (Menyuda 6).[/yellow]")
+        return
+
+    console.print("\n[bold]Qaysi hisobdagi barcha chatlarni sanamoqchisiz?[/bold]")
+    console.print("  [bold cyan]0.[/bold cyan] 🌐 Barcha hisoblar bo'yicha")
+    for i, s in enumerate(sessions, 1):
+        console.print(f"  [bold cyan]{i}.[/bold cyan] 📱 {s.stem}")
+
+    choice = Prompt.ask("Tanlang", choices=[str(i) for i in range(len(sessions) + 1)], default="0")
+    
+    sessions_to_scan = sessions if choice == "0" else [sessions[int(choice) - 1]]
+
+    for s in sessions_to_scan:
+        client = session_mgr.get_client(s.stem, api_id, api_hash)
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                console.print(f"[red]⚠️ [{s.stem}] Sessiyasi faol emas, o'tkazib yuborildi.[/red]")
+                continue
+
+            cleaner = ChatCleaner(client)
+            console.print(f"\n[bold yellow]🔍 [{s.stem}] Akauntdagi BARCHA chatlar sanalmoqda...[/bold yellow]")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                task = progress.add_task("[cyan]Chatlar sanalmoqda...", total=None)
+                stats, dialog_list = await cleaner.get_all_dialogs_summary()
+
+            console.print(Panel(
+                f"📱 [bold yellow]AKAUTDAGI JAMI CHATLAR:[/bold yellow] [bold white]{stats['total']}[/bold white] ta\n\n"
+                f"  ├─ 👤 Shaxsiy chatlar: [bold cyan]{stats['users']}[/bold cyan] ta\n"
+                f"  ├─ 🤖 Botlar: [bold cyan]{stats['bots']}[/bold cyan] ta\n"
+                f"  ├─ 👥 Guruhlar: [bold cyan]{stats['groups']}[/bold cyan] ta\n"
+                f"  └─ 📢 Kanallar: [bold cyan]{stats['channels']}[/bold cyan] ta",
+                title=f"[{s.stem}] Barcha Chatlar Statistikasi",
+                border_style="green"
+            ))
+
+            show_table = Confirm.ask("\n[bold yellow]Barcha chatlar ro'yxatini jadvalda ko'rishni xohlaysizmi?[/bold yellow]", default=False)
+            if show_table:
+                table = Table(title=f"[{s.stem}] Akauntdagi Barcha Chatlar ({len(dialog_list)} ta)", show_lines=True)
+                table.add_column("№", justify="center", style="dim")
+                table.add_column("Turi", style="cyan")
+                table.add_column("Nomi", style="bold")
+                table.add_column("Username", style="yellow")
+                table.add_column("Oxirgi faollik", style="dim")
+                table.add_column("O'qilmadi", justify="center", style="magenta")
+
+                for i, d in enumerate(dialog_list, 1):
+                    table.add_row(
+                        str(i),
+                        d["type"],
+                        d["name"][:25],
+                        d["username"],
+                        d["date"],
+                        str(d["unread"]) if d["unread"] > 0 else "-"
+                    )
+                console.print(table)
+
+        finally:
+            if client.is_connected():
+                await client.disconnect()
+
+async def run_categorized_chats_flow(api_id: int, api_hash: str):
+    sessions = session_mgr.list_sessions()
+    if not sessions:
+        console.print("[yellow]Hech qanday hisob ulanmagan! Avval hisob qo'shing.[/yellow]")
+        return
+
+    console.print("\n[bold]Qaysi hisobdagi chatlarni papkalar bo'yicha saralamoqchisiz?[/bold]")
+    console.print("  [bold cyan]0.[/bold cyan] 🌐 Barcha hisoblar bo'yicha")
+    for i, s in enumerate(sessions, 1):
+        console.print(f"  [bold cyan]{i}.[/bold cyan] 📱 {s.stem}")
+
+    choice = Prompt.ask("Tanlang", choices=[str(i) for i in range(len(sessions) + 1)], default="0")
+    
+    sessions_to_scan = sessions if choice == "0" else [sessions[int(choice) - 1]]
+
+    for s in sessions_to_scan:
+        client = session_mgr.get_client(s.stem, api_id, api_hash)
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                console.print(f"[red]⚠️ [{s.stem}] Sessiyasi faol emas, o'tkazib yuborildi.[/red]")
+                continue
+
+            cleaner = ChatCleaner(client)
+            console.print(f"\n[bold yellow]🔍 [{s.stem}] Akauntdagi chatlar papkalar (kategoriyalar) bo'yicha saralanmoqda...[/bold yellow]")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                progress.add_task("[cyan]Saralanmoqda...", total=None)
+                cat = await cleaner.categorize_all_dialogs()
+
+            total_all = sum(len(v) for v in cat.values())
+
+            console.print(Panel(
+                f"📱 [bold yellow]AKAUTDAGI JAMI CHATLAR:[/bold yellow] [bold white]{total_all}[/bold white] ta\n\n"
+                f"👑 [bold yellow]Siz Admin/Ega bo'lgan chatlar:[/bold yellow]\n"
+                f"  ├─ 📢 Admin Kanallar: [bold green]{len(cat['admin_channels'])}[/bold green] ta\n"
+                f"  └─ 👥 Admin Guruhlar: [bold green]{len(cat['admin_groups'])}[/bold green] ta\n\n"
+                f"👤 [bold cyan]Shaxsiy chatlar va Botlar:[/bold cyan]\n"
+                f"  ├─ 👤 Shaxsiy (Jonli): [bold cyan]{len(cat['personal_users'])}[/bold cyan] ta\n"
+                f"  ├─ 👻 O'chirilgan Shaxsiy Hisoblar: [bold red]{len(cat['deleted_users'])}[/bold red] ta\n"
+                f"  ├─ 🤖 Faol Botlar: [bold yellow]{len(cat['active_bots'])}[/bold yellow] ta\n"
+                f"  └─ 🤖👻 O'chirilgan Botlar (Deleted Bot): [bold red]{len(cat['deleted_bots'])}[/bold red] ta\n\n"
+                f"📢 [bold blue]Kanallar (Obunalar):[/bold blue]\n"
+                f"  ├─ 🌐 Ommaviy (Public) Kanallar: [bold white]{len(cat['public_channels'])}[/bold white] ta\n"
+                f"  └─ 🔒 Yopiq (Private) Kanallar: [bold dim]{len(cat['private_channels'])}[/bold dim] ta\n\n"
+                f"👥 [bold magenta]Guruhlar:[/bold magenta]\n"
+                f"  ├─ 🌐 Ommaviy (Public) Guruhlar: [bold white]{len(cat['public_groups'])}[/bold white] ta\n"
+                f"  └─ 🔒 Yopiq (Private) Guruhlar: [bold dim]{len(cat['private_groups'])}[/bold dim] ta",
+                title=f"[{s.stem}] Chatlar Papkalari Statistikasi",
+                border_style="cyan"
+            ))
+
+            while True:
+                console.print("\n[bold]Qaysi papka (kategoriya) chatlarini jadvalda ko'rmoqchisiz?[/bold]")
+                console.print(f"  [bold cyan]1.[/bold cyan] 👑 Admin Kanallar ({len(cat['admin_channels'])} ta)")
+                console.print(f"  [bold cyan]2.[/bold cyan] 👑 Admin Guruhlar ({len(cat['admin_groups'])} ta)")
+                console.print(f"  [bold cyan]3.[/bold cyan] 👻 O'chirilgan Shaxsiy Hisoblar ({len(cat['deleted_users'])} ta)")
+                console.print(f"  [bold cyan]4.[/bold cyan] 👤 Shaxsiy Chatlar (Jonli) ({len(cat['personal_users'])} ta)")
+                console.print(f"  [bold cyan]5.[/bold cyan] 🤖 Faol Botlar ({len(cat['active_bots'])} ta)")
+                console.print(f"  [bold cyan]6.[/bold cyan] 🤖👻 O'chirilgan Botlar ({len(cat['deleted_bots'])} ta)")
+                console.print(f"  [bold cyan]7.[/bold cyan] 📢 Ommaviy (Public) Kanallar ({len(cat['public_channels'])} ta)")
+                console.print(f"  [bold cyan]8.[/bold cyan] 🔒 Yopiq (Private) Kanallar ({len(cat['private_channels'])} ta)")
+                console.print(f"  [bold cyan]9.[/bold cyan] 👥 Ommaviy (Public) Guruhlar ({len(cat['public_groups'])} ta)")
+                console.print(f"  [bold cyan]10.[/bold cyan] 🔒 Yopiq (Private) Guruhlar ({len(cat['private_groups'])} ta)")
+                console.print("  [bold dim]0.[/bold dim] Orqaga")
+
+                sub_c = Prompt.ask("Tanlang", choices=[str(i) for i in range(11)], default="0")
+                if sub_c == "0":
+                    break
+
+                cat_map = {
+                    "1": ("👑 Admin Kanallar", cat['admin_channels']),
+                    "2": ("👑 Admin Guruhlar", cat['admin_groups']),
+                    "3": ("👻 O'chirilgan Shaxsiy Hisoblar", cat['deleted_users']),
+                    "4": ("👤 Shaxsiy Chatlar (Jonli)", cat['personal_users']),
+                    "5": ("🤖 Faol Botlar", cat['active_bots']),
+                    "6": ("🤖👻 O'chirilgan Botlar", cat['deleted_bots']),
+                    "7": ("📢 Ommaviy Kanallar", cat['public_channels']),
+                    "8": ("🔒 Yopiq Kanallar", cat['private_channels']),
+                    "9": ("👥 Ommaviy Guruhlar", cat['public_groups']),
+                    "10": ("🔒 Yopiq Guruhlar", cat['private_groups']),
+                }
+
+                cat_title, cat_list = cat_map[sub_c]
+
+                if not cat_list:
+                    console.print(f"[yellow]Ushbu kategoriyada chatlar mavjud emas.[/yellow]")
+                    continue
+
+                table = Table(title=f"[{s.stem}] {cat_title} ({len(cat_list)} ta)", show_lines=True)
+                table.add_column("№", justify="center", style="dim")
+                table.add_column("Nomi", style="bold")
+                table.add_column("Username", style="yellow")
+                table.add_column("Oxirgi faollik", style="dim")
+                table.add_column("O'qilmadi", justify="center", style="magenta")
+
+                for idx, d in enumerate(cat_list, 1):
+                    table.add_row(
+                        str(idx),
+                        d["name"][:30],
+                        d["username"],
+                        d["date"],
+                        str(d["unread"]) if d["unread"] > 0 else "-"
+                    )
+                console.print(table)
+
+        finally:
+            if client.is_connected():
+                await client.disconnect()
+
+async def run_create_telegram_folders_flow(api_id: int, api_hash: str):
+    sessions = session_mgr.list_sessions()
+    if not sessions:
+        console.print("[yellow]Hech qanday hisob ulanmagan![/yellow]")
+        return
+
+    console.print("\n[bold]Qaysi hisob Telegram ilovasida haqiqiy PAPKALAR (Folders) yaratmoqchisiz?[/bold]")
+    console.print("  [bold cyan]0.[/bold cyan] 🌐 Barcha hisoblarda yaratish")
+    for i, s in enumerate(sessions, 1):
+        console.print(f"  [bold cyan]{i}.[/bold cyan] 📱 {s.stem}")
+
+    choice = Prompt.ask("Tanlang", choices=[str(i) for i in range(len(sessions) + 1)], default="0")
+    
+    sessions_to_process = sessions if choice == "0" else [sessions[int(choice) - 1]]
+
+    for s in sessions_to_process:
+        client = session_mgr.get_client(s.stem, api_id, api_hash)
+        try:
+            await client.connect()
+            if not await client.is_user_authorized():
+                console.print(f"[red]⚠️ [{s.stem}] Sessiyasi faol emas, o'tkazib yuborildi.[/red]")
+                continue
+
+            cleaner = ChatCleaner(client)
+            console.print(f"\n[bold yellow]🚀 [{s.stem}] Telegram ilovangizda haqiqiy Chat Papkalari yaratilmoqda...[/bold yellow]")
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                progress.add_task("[cyan]Papkalarni Telegramga yuborish...", total=None)
+                res = await cleaner.create_telegram_folders()
+
+            res_text = "\n".join([f"  • [bold cyan]{k}[/bold cyan]: [green]{v}[/green]" for k, v in res.items()])
+            console.print(Panel(
+                f"[bold green]✓ Telegram ilovangizda quyidagi PAPKALAR muvaffaqiyatli yaratildi![/bold green]\n\n{res_text}\n\n"
+                f"ℹ️ [italic green]Telegram ilovangizni (Desktop yoki Mobile) ochib chap paneldagi yangi papkalarni ko'rishingiz mumkin![/italic green]",
+                title=f"[{s.stem}] Telegram Papkalari Yaratildi 🚀",
+                border_style="green"
+            ))
+
+        finally:
+            if client.is_connected():
+                await client.disconnect()
+
 async def dry_run_menu(api_id: int, api_hash: str):
     console.print("\n[bold cyan]🔍 SKANERLASH (DRY RUN) REJIMI[/bold cyan]")
     console.print("  [bold green]1.[/bold green] 🧹 Shaxsiy chatlarni skanerlash (Bo'sh va 'Telegramga qo'shildi')")
     console.print("  [bold yellow]2.[/bold yellow] 🤖 Nofaol botlarni skanerlash (9+ oy)")
     console.print("  [bold magenta]3.[/bold magenta] 👥 Shubhali guruhlarni skanerlash (200+ a'zoli)")
+    console.print("  [bold blue]4.[/bold blue] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralash")
+    console.print("  [bold cyan]5.[/bold cyan] 📊 Akauntdagi BARCHA chatlarni sanash (Umumiy statistikasi)")
     console.print("  [bold dim]0.[/bold dim] Orqaga")
     
-    choice = Prompt.ask("Tanlang", choices=["0", "1", "2", "3"], default="1")
+    choice = Prompt.ask("Tanlang", choices=["0", "1", "2", "3", "4", "5"], default="4")
     if choice == "1":
         await run_cleaner_flow(api_id, api_hash, dry_run=True)
     elif choice == "2":
         await run_bot_cleaner_flow(api_id, api_hash, dry_run=True)
     elif choice == "3":
         await run_group_cleaner_flow(api_id, api_hash, dry_run=True)
+    elif choice == "4":
+        await run_categorized_chats_flow(api_id, api_hash)
+    elif choice == "5":
+        await run_all_chats_count_flow(api_id, api_hash)
 
 async def delete_account_flow():
     sessions = session_mgr.list_sessions()
@@ -587,14 +846,17 @@ async def main():
         console.print("  [bold green]1.[/bold green] 🧹 Bo'sh va 'Kontakt qo'shildi' chatlarni tozalash (Delete)")
         console.print("  [bold magenta]2.[/bold magenta] 🤖 9+ oy ishlatilmagan botlarni tozalash (Block & Delete)")
         console.print("  [bold yellow]3.[/bold yellow] 👥 Shubhali guruhlardan chiqish (Yozilmagan 200+ a'zoli)")
-        console.print("  [bold cyan]4.[/bold cyan] 🔍 Skanerlash (Faqat ko'rish / Dry-run)")
-        console.print("  [bold blue]5.[/bold blue] ➕ Yangi Telegram hisob qo'shish")
-        console.print("  [bold white]6.[/bold white] 📱 Ulangan hisoblar ro'yxati")
-        console.print("  [bold red]7.[/bold red] 🗑️ Hisobni tizimdan o'chirish")
+        console.print("  [bold green]4.[/bold green] 📂 TELEGRAM ILOVASIDA PAPKALAR (Folders) YARATISH 🚀 ⭐")
+        console.print("  [bold cyan]5.[/bold cyan] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralab ko'rish")
+        console.print("  [bold cyan]6.[/bold cyan] 🔍 Skanerlash (Faqat ko'rish / Dry-run)")
+        console.print("  [bold blue]7.[/bold blue] 📊 Akauntdagi BARCHA chatlarni sanash (To'liq statistika)")
+        console.print("  [bold white]8.[/bold white] ➕ Yangi Telegram hisob qo'shish")
+        console.print("  [bold white]9.[/bold white] 📱 Ulangan hisoblar ro'yxati")
+        console.print("  [bold red]10.[/bold red] 🗑️ Hisobni tizimdan o'chirish")
         console.print("  [bold dim]0.[/bold dim] 🚪 Chiqish")
         console.print("[bold cyan]═════════════════════════════════════════════════════════════════════[/bold cyan]")
 
-        choice = Prompt.ask("Buyruqni tanlang", choices=["0", "1", "2", "3", "4", "5", "6", "7"], default="1")
+        choice = Prompt.ask("Buyruqni tanlang", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default="4")
 
         if choice == "1":
             await run_cleaner_flow(api_id, api_hash, dry_run=False)
@@ -603,12 +865,18 @@ async def main():
         elif choice == "3":
             await run_group_cleaner_flow(api_id, api_hash, dry_run=False)
         elif choice == "4":
-            await dry_run_menu(api_id, api_hash)
+            await run_create_telegram_folders_flow(api_id, api_hash)
         elif choice == "5":
-            await add_new_account(api_id, api_hash)
+            await run_categorized_chats_flow(api_id, api_hash)
         elif choice == "6":
-            await list_accounts(api_id, api_hash)
+            await dry_run_menu(api_id, api_hash)
         elif choice == "7":
+            await run_all_chats_count_flow(api_id, api_hash)
+        elif choice == "8":
+            await add_new_account(api_id, api_hash)
+        elif choice == "9":
+            await list_accounts(api_id, api_hash)
+        elif choice == "10":
             await delete_account_flow()
         elif choice == "0":
             console.print("[bold cyan]Dastur yakunlandi. Xayr![/bold cyan]")
