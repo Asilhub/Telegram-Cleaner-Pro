@@ -626,6 +626,65 @@ class ChatCleaner:
 
         return targets, stats
 
+    async def scan_deleted_accounts_without_media(
+        self,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
+    ) -> Tuple[List[ChatTarget], Dict[str, int]]:
+        """
+        Faqat TEKST xabari bo'lgan Deleted Account'larni topadi.
+        Rasm, video, ovozli xabar (voice), video xabar yoki hujjat bor chatlarni saqlab qoladi (SKIP qiladi).
+        """
+        targets: List[ChatTarget] = []
+        dialogs = await self.client.get_dialogs()
+        stats = self.get_dialog_stats(dialogs)
+        total_dialogs = stats["total"]
+
+        for index, dialog in enumerate(dialogs):
+            if progress_callback and (index % 5 == 0 or index == total_dialogs - 1):
+                progress_callback(index + 1, total_dialogs, dialog.name or "Noma'lum")
+
+            if not dialog.is_user:
+                continue
+
+            entity = dialog.entity
+            if not entity or not getattr(entity, 'deleted', False):
+                continue
+
+            if entity.id in self.whitelist:
+                continue
+
+            # Xabarlarda Rasm, Video, Ovozli xabar, Hujjat borligini tekshirish
+            has_media = False
+            msg_count = 0
+            try:
+                messages = await self.client.get_messages(dialog.input_entity, limit=50)
+                msg_count = len(messages)
+                for m in messages:
+                    if m and getattr(m, 'media', None):
+                        if not isinstance(m.media, types.MessageMediaWebPage):
+                            has_media = True
+                            break
+            except Exception as e:
+                logger.warning(f"Deleted chat xabarlarini tekshirishda ogohlantirish ({dialog.name}): {e}")
+                continue
+
+            # Agar Rasm/Video/Ovoz bor bo'lsa -> SAQLAYMIZ (SKIP)
+            if has_media:
+                continue
+
+            # Faqat tekst xabar bor yoki bo'sh chat -> O'chirilsin
+            targets.append(ChatTarget(
+                dialog=dialog,
+                entity=entity,
+                reason=f"👻 O'chirilgan akkaunt (Faqat tekst, {msg_count} ta xabar)",
+                message_count=msg_count
+            ))
+
+        if progress_callback:
+            progress_callback(total_dialogs, total_dialogs, "Tayyor")
+
+        return targets, stats
+
     async def delete_target(self, target: ChatTarget) -> Tuple_Result:
         max_retries = 3
         retry_count = 0

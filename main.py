@@ -442,6 +442,123 @@ async def process_group_cleaning(client, session_name: str, min_members: int, dr
         border_style="green"
     ))
 
+async def process_deleted_accounts_cleaning(client, session_name: str, dry_run: bool):
+    cleaner = ChatCleaner(client)
+    console.print(f"\n[bold yellow]🔍 [{session_name}] Faqat TEKST yozishmasi bor 'Deleted Account'lar skanerlanmoqda (Media borlari saqlanadi)...[/bold yellow]")
+
+    targets: List[ChatTarget] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task = progress.add_task("[cyan]Deleted chatlarni tekshirish...", total=100)
+        def progress_cb(current, total, name):
+            progress.update(task, total=total, completed=current, description=f"[cyan]Tekshirilmoqda: [white]{name[:20]}[/white]")
+
+        await client.connect()
+        targets, stats = await cleaner.scan_deleted_accounts_without_media(progress_callback=progress_cb)
+
+    console.print(Panel(
+        f"📊 [bold yellow]Akauntdagi jami chatlar:[/bold yellow] [bold white]{stats['total']}[/bold white] ta\n"
+        f"🎯 [bold red]Faqat TEKST xabari bor (O'chiriladigan) Deleted Account'lar:[/bold red] [bold white]{len(targets)}[/bold white] ta\n"
+        f"🛡️ [bold green]Rasm / Ovoz / Video borligi tufayli SAQLAB QOLINGAN Deleted Account'lar kiritilmadi![/bold green]",
+        title=f"[{session_name}] Deleted Account'lar Statistikasi",
+        border_style="cyan"
+    ))
+
+    if not targets:
+        console.print(f"[bold green]✓ [{session_name}] O'chirish uchun faqat tekstli Deleted Account'lar topilmadi![/bold green]")
+        return
+
+    table = Table(title=f"[{session_name}] Faqat Tekstli O'chiriladigan Deleted Account'lar ({len(targets)} ta)", show_lines=True)
+    table.add_column("№", justify="center", style="dim")
+    table.add_column("Foydalanuvchi", style="bold red")
+    table.add_column("Sabab", style="yellow")
+    table.add_column("Xabarlar soni", justify="center")
+
+    for i, t in enumerate(targets, 1):
+        table.add_row(str(i), t.name, t.reason, str(t.message_count))
+
+    console.print(table)
+
+    if dry_run:
+        console.print(f"[dim]ℹ️ Sinov (Dry Run) rejimi: Hech qanday Deleted Account o'chirilmadi.[/dim]")
+        return
+
+    confirm = Confirm.ask(
+        f"[bold red]⚠️ Yuqoridagi {len(targets)} ta faqat tekstli Deleted Account'larni O'CHIRISHNI tasdiqlaysizmi?[/bold red]",
+        default=False
+    )
+    if not confirm:
+        console.print("[yellow]Amal bekor qilindi.[/yellow]")
+        return
+
+    console.print(f"\n[bold red]🧹 Deleted Account'lar o'chirilmoqda (Kechikish: {cleaner.delay}s)...[/bold red]")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console
+    ) as progress:
+        task = progress.add_task("[red]O'chirilmoqda...", total=len(targets))
+
+        def status_cb(current, total, target, success, msg):
+            status_text = "[green]O'chirildi[/green]" if success else f"[red]{msg}[/red]"
+            progress.update(task, completed=current, description=f"[bold]{target.name[:15]}[/bold]: {status_text}")
+
+        stats_res = await cleaner.clean_all(targets, status_callback=status_cb)
+
+    console.print(Panel(
+        f"[bold green]✓ Deleted Account'larni tozalash yakunlandi![/bold green]\n\n"
+        f"📊 Jami topilgan: [bold]{stats_res['total']}[/bold]\n"
+        f"🗑️ O'chirildi: [bold green]{stats_res['deleted']}[/bold green]\n"
+        f"❌ Xatoliklar: [bold red]{stats_res['failed']}[/bold red]",
+        title=f"[{session_name}] Natija",
+        border_style="green"
+    ))
+
+async def run_deleted_accounts_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
+    sessions = session_mgr.list_sessions()
+    if not sessions:
+        console.print("[yellow]Hech qanday hisob ulanmagan! Avval hisob qo'shing.[/yellow]")
+        return
+
+    console.print("\n[bold]Qaysi hisobdagi Deleted Account'larni tozalamoqchisiz?[/bold]")
+    console.print("  [bold cyan]0.[/bold cyan] 🌐 Barcha hisoblar bo'yicha")
+    for i, s in enumerate(sessions, 1):
+        console.print(f"  [bold cyan]{i}.[/bold cyan] 📱 {s.stem}")
+
+    choice = Prompt.ask("Tanlang", choices=[str(i) for i in range(len(sessions) + 1)], default="0")
+
+    if choice == "0":
+        for s in sessions:
+            client = session_mgr.get_client(s.stem, api_id, api_hash)
+            try:
+                await client.connect()
+                if await client.is_user_authorized():
+                    await process_deleted_accounts_cleaning(client, s.stem, dry_run=dry_run)
+                else:
+                    console.print(f"[red]⚠️ [{s.stem}] Sessiyasi faol emas, o'tkazib yuborildi.[/red]")
+            finally:
+                if client.is_connected():
+                    await client.disconnect()
+    else:
+        selected_session = sessions[int(choice) - 1]
+        client = session_mgr.get_client(selected_session.stem, api_id, api_hash)
+        try:
+            await client.connect()
+            if await client.is_user_authorized():
+                await process_deleted_accounts_cleaning(client, selected_session.stem, dry_run=dry_run)
+            else:
+                console.print(f"[red]⚠️ [{selected_session.stem}] Sessiyasi faol emas.[/red]")
+        finally:
+            if client.is_connected():
+                await client.disconnect()
+
 async def run_cleaner_flow(api_id: int, api_hash: str, dry_run: bool):
     sessions = session_mgr.list_sessions()
     if not sessions:
@@ -801,11 +918,12 @@ async def dry_run_menu(api_id: int, api_hash: str):
     console.print("  [bold green]1.[/bold green] 🧹 Shaxsiy chatlarni skanerlash (Bo'sh va 'Telegramga qo'shildi')")
     console.print("  [bold yellow]2.[/bold yellow] 🤖 Nofaol botlarni skanerlash (9+ oy)")
     console.print("  [bold magenta]3.[/bold magenta] 👥 Shubhali guruhlarni skanerlash (200+ a'zoli)")
-    console.print("  [bold blue]4.[/bold blue] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralash")
-    console.print("  [bold cyan]5.[/bold cyan] 📊 Akauntdagi BARCHA chatlarni sanash (Umumiy statistikasi)")
+    console.print("  [bold red]4.[/bold red] 👻 Faqat TEKSTLI 'Deleted Account'larni skanerlash (Media borlari saqlanadi)")
+    console.print("  [bold blue]5.[/bold blue] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralash")
+    console.print("  [bold cyan]6.[/bold cyan] 📊 Akauntdagi BARCHA chatlarni sanash (Umumiy statistikasi)")
     console.print("  [bold dim]0.[/bold dim] Orqaga")
     
-    choice = Prompt.ask("Tanlang", choices=["0", "1", "2", "3", "4", "5"], default="4")
+    choice = Prompt.ask("Tanlang", choices=["0", "1", "2", "3", "4", "5", "6"], default="4")
     if choice == "1":
         await run_cleaner_flow(api_id, api_hash, dry_run=True)
     elif choice == "2":
@@ -813,8 +931,10 @@ async def dry_run_menu(api_id: int, api_hash: str):
     elif choice == "3":
         await run_group_cleaner_flow(api_id, api_hash, dry_run=True)
     elif choice == "4":
-        await run_categorized_chats_flow(api_id, api_hash)
+        await run_deleted_accounts_cleaner_flow(api_id, api_hash, dry_run=True)
     elif choice == "5":
+        await run_categorized_chats_flow(api_id, api_hash)
+    elif choice == "6":
         await run_all_chats_count_flow(api_id, api_hash)
 
 async def delete_account_flow():
@@ -846,17 +966,18 @@ async def main():
         console.print("  [bold green]1.[/bold green] 🧹 Bo'sh va 'Kontakt qo'shildi' chatlarni tozalash (Delete)")
         console.print("  [bold magenta]2.[/bold magenta] 🤖 9+ oy ishlatilmagan botlarni tozalash (Block & Delete)")
         console.print("  [bold yellow]3.[/bold yellow] 👥 Shubhali guruhlardan chiqish (Yozilmagan 200+ a'zoli)")
-        console.print("  [bold green]4.[/bold green] 📂 TELEGRAM ILOVASIDA PAPKALAR (Folders) YARATISH 🚀 ⭐")
-        console.print("  [bold cyan]5.[/bold cyan] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralab ko'rish")
-        console.print("  [bold cyan]6.[/bold cyan] 🔍 Skanerlash (Faqat ko'rish / Dry-run)")
-        console.print("  [bold blue]7.[/bold blue] 📊 Akauntdagi BARCHA chatlarni sanash (To'liq statistika)")
-        console.print("  [bold white]8.[/bold white] ➕ Yangi Telegram hisob qo'shish")
-        console.print("  [bold white]9.[/bold white] 📱 Ulangan hisoblar ro'yxati")
-        console.print("  [bold red]10.[/bold red] 🗑️ Hisobni tizimdan o'chirish")
+        console.print("  [bold red]4.[/bold red] 👻 Faqat TEKSTLI 'Deleted Account'larni tozalash (Rasm/Ovoz borlari SAQLANADI) 🚀 ⭐")
+        console.print("  [bold green]5.[/bold green] 📂 TELEGRAM ILOVASIDA PAPKALAR (Folders) YARATISH 🚀 ⭐")
+        console.print("  [bold cyan]6.[/bold cyan] 📁 Terminalda Chatlarni PAPKALAR bo'yicha saralab ko'rish")
+        console.print("  [bold cyan]7.[/bold cyan] 🔍 Skanerlash (Faqat ko'rish / Dry-run)")
+        console.print("  [bold blue]8.[/bold blue] 📊 Akauntdagi BARCHA chatlarni sanash (To'liq statistika)")
+        console.print("  [bold white]9.[/bold white] ➕ Yangi Telegram hisob qo'shish")
+        console.print("  [bold white]10.[/bold white] 📱 Ulangan hisoblar ro'yxati")
+        console.print("  [bold red]11.[/bold red] 🗑️ Hisobni tizimdan o'chirish")
         console.print("  [bold dim]0.[/bold dim] 🚪 Chiqish")
         console.print("[bold cyan]═════════════════════════════════════════════════════════════════════[/bold cyan]")
 
-        choice = Prompt.ask("Buyruqni tanlang", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], default="4")
+        choice = Prompt.ask("Buyruqni tanlang", choices=["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], default="4")
 
         if choice == "1":
             await run_cleaner_flow(api_id, api_hash, dry_run=False)
@@ -865,18 +986,20 @@ async def main():
         elif choice == "3":
             await run_group_cleaner_flow(api_id, api_hash, dry_run=False)
         elif choice == "4":
-            await run_create_telegram_folders_flow(api_id, api_hash)
+            await run_deleted_accounts_cleaner_flow(api_id, api_hash, dry_run=False)
         elif choice == "5":
-            await run_categorized_chats_flow(api_id, api_hash)
+            await run_create_telegram_folders_flow(api_id, api_hash)
         elif choice == "6":
-            await dry_run_menu(api_id, api_hash)
+            await run_categorized_chats_flow(api_id, api_hash)
         elif choice == "7":
-            await run_all_chats_count_flow(api_id, api_hash)
+            await dry_run_menu(api_id, api_hash)
         elif choice == "8":
-            await add_new_account(api_id, api_hash)
+            await run_all_chats_count_flow(api_id, api_hash)
         elif choice == "9":
-            await list_accounts(api_id, api_hash)
+            await add_new_account(api_id, api_hash)
         elif choice == "10":
+            await list_accounts(api_id, api_hash)
+        elif choice == "11":
             await delete_account_flow()
         elif choice == "0":
             console.print("[bold cyan]Dastur yakunlandi. Xayr![/bold cyan]")
